@@ -1,0 +1,92 @@
+# ============================================================
+# DSP 广告投放 AB 分桶实验 — 实验配置文件
+# ============================================================
+
+# --- 实验基本信息 ---
+experiment:
+  name: "出海 DSP 投放策略 AB 实验"
+  description: "验证新投放策略对广告主侧核心指标的影响"
+  date: "2026-07-08"
+
+# --- 核心指标定义 ---
+metrics:
+  # 比例指标（用 Z-test）
+  proportion_metrics:
+    - CTR    # Clicks / Impressions
+    - CVR    # Conversions / Clicks
+  # 连续指标（用 Welch T-test）
+  continuous_metrics:
+    - ROAS   # Revenue / Spend
+    - CPC    # Spend / Clicks
+    - CPM    # Spend / Impressions * 1000
+    - CPA    # Spend / Conversions
+  # 非参数指标（用 Mann-Whitney U）
+  nonparametric_metrics:
+    - Revenue
+    - Spend
+
+# --- 显著性检验参数 ---
+significance:
+  alpha: 0.05                      # 显著性水平
+  alternative: "two-sided"         # 双尾检验
+  multiple_comparison_correction:
+    - "bonferroni"                 # Bonferroni 校正
+    - "fdr_bh"                     # Benjamini-Hochberg FDR
+
+# --- Retro-AA 健康检查参数 ---
+retro_aa:
+  iterations: 1000                 # 随机切分次数
+  random_seed: 42                  # 随机种子（保证可复现）
+  fpr_pass_threshold: 0.06         # FPR ≤ 6% → PASS
+  fpr_warn_threshold: 0.08         # 6% < FPR ≤ 8% → WARN, >8% → FAIL
+
+# --- AB 分桶参数 ---
+splitting:
+  mode: "simulate"                 # simulate | real
+  group_col: "group"               # 真实模式下的分组列名
+  control_label: "control"
+  treatment_label: "treatment"
+  split_ratio: 0.5                 # control/treatment 比例
+  # 分层抽样的维度（确保这些维度上两组分布一致）
+  # 注意: 维度不宜过多，否则交叉组过细会导致 SRM 偏移
+  # 1800 条数据用 2 个维度合适（3 platform × 5 industry = ~15 组，每组 ~120 条）
+  strata_dimensions:
+    - platform
+    - industry
+  random_seed: 42
+
+# --- SRM 均衡校验参数 ---
+balance_check:
+  alpha: 0.05                      # SRM 卡方检验显著性水平
+  smd_threshold: 0.1               # SMD < 0.1 视为均衡
+  # 预实验指标均衡检查的指标
+  baseline_metrics:
+    - impressions
+    - clicks
+    - conversions
+    - ad_spend
+    - revenue
+
+# --- 告警阈值 ---
+alerting:
+  traffic_skew_ratio: 0.55         # 单日两组流量比 > 55/45 触发告警
+  metric_degradation_pct: 0.10     # Treatment 指标相对 Control 下降 > 10%
+  outlier_sigma: 3.0               # ROAS 超过 3σ 标记为离群值
+  # 归因异常检测
+  attribution_checks:
+    - "clicks > 0 and impressions == 0"     # 无曝光有点击
+    - "conversions > 0 and clicks == 0"     # 无点击有转化
+    - "revenue > 0 and spend == 0"          # 无消耗有收入
+    - "conversions > 0 and spend == 0"      # 无消耗有转化
+
+# --- 归因分解参数 ---
+decomposition:
+  # Revenue 链式分解的因子顺序（按广告主投放漏斗）
+  revenue_factors:
+    - "impressions"    # A: 曝光量
+    - "CTR"            # B: 点击率 = clicks/impressions
+    - "CVR"            # C: 转化率 = conversions/clicks
+    - "ARPConv"        # D: 单次转化收入 = revenue/conversions
+  # ROAS 差分分解
+  roas_numerator: "revenue"
+  roas_denominator: "spend"
